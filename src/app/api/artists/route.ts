@@ -3,6 +3,20 @@ import { getArtists, addArtist, updateArtist } from '@/lib/artists';
 
 export const dynamic = 'force-dynamic'; // Ensure we get fresh data on each request
 
+interface ArtistFormData {
+  name: string;
+  email: string;
+  phone: string;
+  category: string;
+  city: string;
+  bio: string;
+  experience: string;
+  languages: string[];
+  fee: number;
+  imageUrl: string;
+  image?: string;
+}
+
 export async function GET() {
   try {
     const artists = await getArtists();
@@ -18,57 +32,87 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData();
-    
-    // Handle file upload if exists
-    const imageFile = formData.get('image') as File | null;
-    let imageUrl = '';
-    
-    if (imageFile && imageFile.size > 0) {
-      // In a real app, you would upload this to a storage service
-      // For now, we'll just store the file name
-      imageUrl = `/uploads/${Date.now()}-${imageFile.name}`;
-    }
+    const contentType = request.headers.get('content-type');
+    let artistData: ArtistFormData;
 
-    // Parse fee from form data
-    console.log('Raw form data:', Object.fromEntries(formData.entries()));
-    
-    let fee = 0;
-    const feeValue = formData.get('fee');
-    console.log('Raw fee value from form:', feeValue);
-    
-    if (feeValue) {
-      // Convert to string and remove any non-numeric characters except decimal point
-      const numericValue = String(feeValue).replace(/[^0-9.]/g, '');
-      console.log('Numeric value after cleanup:', numericValue);
+    if (contentType?.includes('multipart/form-data')) {
+      const formData = await request.formData();
       
-      // Convert to number
-      fee = Math.max(0, Math.floor(Number(numericValue) || 0));
-      console.log('Final fee number:', fee);
+      // Handle file upload if exists
+      let imageUrl = '';
+      const imageFile = formData.get('image') as File | null;
+      
+      if (imageFile && imageFile.size > 0) {
+        // In a real app, you would upload this to a storage service
+        // For now, we'll just store a placeholder
+        imageUrl = `/uploads/${Date.now()}-${imageFile.name}`;
+      }
+      
+      // Get other form fields
+      const name = formData.get('name') as string;
+      const email = formData.get('email') as string;
+      const phone = formData.get('phone') as string;
+      const category = formData.get('category') as string;
+      const city = formData.get('city') as string;
+      const bio = (formData.get('bio') as string) || '';
+      const experience = (formData.get('experience') as string) || '';
+      const languages = (formData.get('languages') as string || '')
+        .split(',')
+        .map(lang => lang.trim())
+        .filter(Boolean);
+      
+      // Parse fee
+      let fee = 0;
+      const feeValue = formData.get('fee') as string;
+      if (feeValue) {
+        const numericValue = feeValue.replace(/[^0-9.]/g, '');
+        fee = Math.max(0, Math.floor(Number(numericValue) * 100) || 0);
+      }
+      
+      artistData = {
+        name,
+        email,
+        phone,
+        category,
+        city,
+        bio,
+        experience,
+        languages,
+        fee,
+        imageUrl,
+        image: imageUrl, // For backward compatibility
+      };
+    } else if (contentType?.includes('application/json')) {
+      const jsonData = await request.json() as Partial<ArtistFormData>;
+
+      artistData = {
+        name: jsonData.name || '',
+        email: jsonData.email || '',
+        phone: jsonData.phone || '',
+        category: jsonData.category || '',
+        city: jsonData.city || '',
+        bio: jsonData.bio || '',
+        experience: jsonData.experience || '',
+        languages: Array.isArray(jsonData.languages) 
+          ? jsonData.languages 
+          : (jsonData.languages || '').split(',').map((lang: string) => lang.trim()).filter(Boolean),
+        fee: Math.max(0, Math.floor(Number(jsonData.fee) * 100) || 0),
+        imageUrl: jsonData.imageUrl || '',
+        image: jsonData.image || jsonData.imageUrl || '',
+      };
+    } else {
+      return NextResponse.json(
+        { error: 'Unsupported content type' },
+        { status: 400 }
+      );
     }
 
-    const artistData = {
-      name: formData.get('name') as string,
-      email: formData.get('email') as string,
-      phone: formData.get('phone') as string,
-      category: formData.get('category') as string,
-      city: formData.get('city') as string,
-      bio: formData.get('bio') as string || '',
-      experience: formData.get('experience') as string || '',
-      languages: (formData.get('languages') as string || '').split(',').map(lang => lang.trim()).filter(Boolean),
-      fee: fee,
-      imageUrl: imageUrl,
-      image: imageUrl, // For backward compatibility
-    };
-    
     const newArtist = await addArtist(artistData);
     return NextResponse.json(newArtist, { status: 201 });
   } catch (error) {
     console.error('Error creating artist:', error);
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Failed to create artist' 
-      },
+      { error: error instanceof Error ? error.message : 'Failed to create artist' },
       { status: 500 }
     );
   }
@@ -77,7 +121,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const { id, status, rejectionReason } = await request.json();
-    
+
     if (!id || !status || (status === 'rejected' && !rejectionReason)) {
       return NextResponse.json(
         { error: 'Missing required fields' },
@@ -101,11 +145,9 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(updatedArtist);
   } catch (error) {
-    console.error('Error updating artist status:', error);
+    console.error('Error updating artist:', error);
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Failed to update artist status' 
-      },
+      { error: 'Failed to update artist' },
       { status: 500 }
     );
   }

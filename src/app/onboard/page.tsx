@@ -147,10 +147,20 @@ export default function OnboardPage() {
       }
       
       // Redirect to success page
-      router.push('/onboard/success');
+      router.push('/artists/success');
     } catch (error) {
       console.error('Error saving artist submission:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to submit form. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to submit form. Please try again.';
+      toast.error(errorMessage);
+      
+      // Log detailed error for debugging
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          cause: error.cause
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }

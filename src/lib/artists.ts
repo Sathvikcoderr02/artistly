@@ -1,6 +1,5 @@
 import { Artist, ApprovalStatus } from '@/types/artist';
-import { promises as fs } from 'fs';
-import path from 'path';
+import { kv } from '@vercel/kv';
 
 type UpdateArtistData = {
   status: ApprovalStatus;
@@ -9,28 +8,16 @@ type UpdateArtistData = {
   reviewedBy?: string;
 };
 
-const dataFilePath = path.join(process.cwd(), 'data/artists.json');
-
-// Ensure data directory exists
-async function ensureDataFile() {
-  try {
-    await fs.mkdir(path.dirname(dataFilePath), { recursive: true });
-    try {
-      await fs.access(dataFilePath);
-    } catch {
-      // File doesn't exist, create it with empty array
-      await fs.writeFile(dataFilePath, JSON.stringify([], null, 2));
-    }
-  } catch (error) {
-    console.error('Error ensuring data file:', error);
-    throw error;
-  }
-}
+const ARTISTS_KEY = 'artists';
 
 export async function getArtists(): Promise<Artist[]> {
-  await ensureDataFile();
-  const fileContents = await fs.readFile(dataFilePath, 'utf8');
-  return JSON.parse(fileContents);
+  try {
+    const artists = await kv.get<Artist[]>(ARTISTS_KEY);
+    return artists || [];
+  } catch (error) {
+    console.error('Error fetching artists from KV:', error);
+    return [];
+  }
 }
 
 export async function addArtist(artist: Omit<Artist, 'id' | 'createdAt' | 'status' | 'reviewedAt' | 'reviewedBy'>): Promise<Artist> {
@@ -43,7 +30,7 @@ export async function addArtist(artist: Omit<Artist, 'id' | 'createdAt' | 'statu
   };
   
   artists.push(newArtist);
-  await fs.writeFile(dataFilePath, JSON.stringify(artists, null, 2));
+  await kv.set(ARTISTS_KEY, artists);
   return newArtist;
 }
 
@@ -53,13 +40,14 @@ export async function updateArtist(id: string, updates: UpdateArtistData): Promi
   
   if (index === -1) return null;
   
-  const updatedArtist: Artist = {
+  const updatedArtist = {
     ...artists[index],
     ...updates,
+    reviewedAt: updates.status !== 'pending' ? new Date().toISOString() : artists[index].reviewedAt,
   };
   
   artists[index] = updatedArtist;
-  await fs.writeFile(dataFilePath, JSON.stringify(artists, null, 2));
+  await kv.set(ARTISTS_KEY, artists);
   return updatedArtist;
 }
 
