@@ -129,13 +129,29 @@ export async function POST(request: Request) {
       message: error.message,
       stack: error.stack,
       name: error.name,
-      // @ts-ignore
-      code: error.code,
-      // @ts-ignore
-      status: error.status
+            code: 'code' in error ? (error as { code: unknown }).code : undefined,
+      status: 'status' in error ? (error as { status: unknown }).status : undefined
     } : error;
     
-    console.error('Error details:', JSON.stringify(errorObj, null, 2));
+    // Safely stringify error object, handling circular references
+    const getCircularReplacer = () => {
+      const seen = new WeakSet();
+      return (key: string, value: unknown) => {
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) {
+            return '[Circular]';
+          }
+          seen.add(value);
+        }
+        return value;
+      };
+    };
+    
+    try {
+      console.error('Error details:', JSON.stringify(errorObj, getCircularReplacer(), 2));
+    } catch (stringifyError) {
+      console.error('Failed to stringify error object:', stringifyError);
+    }
     
     const errorMessage = error instanceof Error 
       ? error.message 
@@ -152,9 +168,10 @@ export async function POST(request: Request) {
           undefined
       },
       { 
-        status: error instanceof Error && 'status' in error ? 
-          // @ts-ignore
-          error.status : 500 
+        status: (error && typeof error === 'object' && 'status' in error && 
+          typeof (error as { status: unknown }).status === 'number')
+          ? (error as { status: number }).status 
+          : 500
       }
     );
   }

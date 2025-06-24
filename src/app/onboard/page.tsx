@@ -157,11 +157,11 @@ export default function OnboardPage() {
           try {
             const jsonError = JSON.parse(errorData);
             errorMessage = jsonError.error || errorMessage;
-          } catch (e) {
+          } catch {
             errorMessage = errorData || errorMessage;
           }
-        } catch (e) {
-          console.error('Failed to parse error response:', e);
+        } catch (parseError) {
+          console.error('Failed to parse error response:', parseError);
         }
         throw new Error(errorMessage);
       }
