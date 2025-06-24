@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getArtists, addArtist, updateArtist } from '@/lib/artists';
+import { put } from '@vercel/blob';
 
 export const dynamic = 'force-dynamic'; // Ensure we get fresh data on each request
 
@@ -13,8 +14,14 @@ interface ArtistFormData {
   experience: string;
   languages: string[];
   fee: number;
-  imageUrl: string;
-  image?: string;
+  imageUrl: string;  // For backward compatibility
+  profileImage: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
 }
 
 export async function GET() {
@@ -45,9 +52,19 @@ export async function POST(request: Request) {
       
       if (imageFile && imageFile.size > 0) {
         console.log('Processing image file:', imageFile.name, imageFile.size, 'bytes');
-        // In a real app, you would upload this to a storage service
-        // For now, we'll just store a placeholder
-        imageUrl = `/uploads/${Date.now()}-${imageFile.name}`;
+        try {
+          // Upload to Vercel Blob
+          const blob = await put(
+            `artists/${Date.now()}-${imageFile.name}`,
+            imageFile,
+            { access: 'public' }
+          );
+          imageUrl = blob.url;
+          console.log('File uploaded to Vercel Blob:', imageUrl);
+        } catch (error) {
+          console.error('Error uploading to Vercel Blob:', error);
+          throw new Error('Failed to upload profile image');
+        }
       } else {
         console.log('No image file found in form data');
       }
@@ -72,65 +89,90 @@ export async function POST(request: Request) {
         ? languagesStr.split(',').map(lang => lang.trim()).filter(Boolean)
         : [];
       
-      // Parse fee
-      let fee = 0;
-      const feeValue = getString('fee');
-      if (feeValue) {
-        const numericValue = feeValue.replace(/[^0-9.]/g, '');
-        fee = Math.max(0, Math.floor(Number(numericValue) * 100) || 0);
-        console.log(`Parsed fee: ${feeValue} -> ${fee} paise`);
-      }
-      
+      // Create artist data with proper types
       artistData = {
         name,
-        email,
-        phone,
         category,
         city,
+        fee: Number(getString('fee')),
         bio,
         experience,
         languages,
-        fee,
-        imageUrl,
-        image: imageUrl, // For backward compatibility
-      };
-    } else if (contentType?.includes('application/json')) {
-      const jsonData = await request.json() as Partial<ArtistFormData>;
-
-      artistData = {
-        name: jsonData.name || '',
-        email: jsonData.email || '',
-        phone: jsonData.phone || '',
-        category: jsonData.category || '',
-        city: jsonData.city || '',
-        bio: jsonData.bio || '',
-        experience: jsonData.experience || '',
-        languages: Array.isArray(jsonData.languages) 
-          ? jsonData.languages 
-          : (jsonData.languages || '').split(',').map((lang: string) => lang.trim()).filter(Boolean),
-        fee: Math.max(0, Math.floor(Number(jsonData.fee) * 100) || 0),
-        imageUrl: jsonData.imageUrl || '',
-        image: jsonData.image || jsonData.imageUrl || '',
+        email,
+        phone,
+        imageUrl: imageUrl,  // For backward compatibility
+        profileImage: imageUrl,
+        status: 'pending' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        reviewedAt: undefined,
+        reviewedBy: undefined,
+        rejectionReason: undefined
       };
     } else {
-      return NextResponse.json(
-        { error: 'Unsupported content type' },
-        { status: 400 }
-      );
+      // Parse JSON body
+      const data = await request.json();
+      
+      // Log received data for debugging
+      console.log('Received artist data:', data);
+      
+      // Validate required fields
+      const requiredFields = [
+        'name', 'category', 'city', 'fee', 'bio', 
+        'experience', 'languages', 'email', 'phone'
+      ];
+      
+      const missingFields = requiredFields.filter(field => !data[field]);
+      
+      if (missingFields.length > 0) {
+        return NextResponse.json(
+          { 
+            error: 'Missing required fields',
+            missingFields
+          },
+          { status: 400 }
+        );
+      }
+      
+      // Create artist data with proper types
+      artistData = {
+        name: data.name,
+        category: data.category,
+        city: data.city,
+        fee: Number(data.fee),
+        bio: data.bio,
+        experience: data.experience,
+        languages: Array.isArray(data.languages) 
+          ? data.languages 
+          : [data.languages].filter(Boolean),
+        email: data.email,
+        phone: data.phone,
+        imageUrl: data.profileImage || '',  // For backward compatibility
+        profileImage: data.profileImage || '',
+        status: 'pending' as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        reviewedAt: undefined,
+        reviewedBy: undefined,
+        rejectionReason: undefined
+      };
     }
-
+    
+    console.log('Creating artist with data:', artistData);
     const newArtist = await addArtist(artistData);
+    console.log('Successfully created artist:', newArtist.id);
+    
     return NextResponse.json(newArtist, { status: 201 });
   } catch (error) {
     console.error('Error in /api/artists POST:', error);
     
-    // Log the full error with stack trace
+    // Log the full error with stack trace for debugging
     const errorObj = error instanceof Error ? {
       message: error.message,
       stack: error.stack,
       name: error.name,
-            code: 'code' in error ? (error as { code: unknown }).code : undefined,
-      status: 'status' in error ? (error as { status: unknown }).status : undefined
+      ...(typeof error === 'object' && 'code' in error ? { code: String(error.code) } : {}),
+      ...(typeof error === 'object' && 'status' in error ? { status: Number(error.status) } : {})
     } : error;
     
     // Safely stringify error object, handling circular references
@@ -171,7 +213,7 @@ export async function POST(request: Request) {
         status: (error && typeof error === 'object' && 'status' in error && 
           typeof (error as { status: unknown }).status === 'number')
           ? (error as { status: number }).status 
-          : 500
+          : 500 
       }
     );
   }

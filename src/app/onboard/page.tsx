@@ -104,7 +104,6 @@ export default function OnboardPage() {
       setIsSubmitting(true);
       
       console.log('Form data:', data);
-      console.log('Fee range from form:', data.feeRange);
       
       const formData = new FormData();
       const category = data.categories[0] || 'Other';
@@ -133,23 +132,57 @@ export default function OnboardPage() {
         console.log(`${key}:`, value);
       }
       
-      // Add image if present
-      if (data.profileImage) {
-        formData.append('image', data.profileImage);
+      // Extract profile image if it exists
+      const { profileImage, ...formDataWithoutImage } = data;
+      let imageUrl = '';
+
+      // Upload profile image if provided
+      if (profileImage) {
+        try {
+          const uploadFormData = new FormData();
+          uploadFormData.append('file', profileImage);
+          
+          const uploadResponse = await fetch('/api/upload', {
+            method: 'POST',
+            body: uploadFormData,
+          });
+
+          if (!uploadResponse.ok) {
+            throw new Error('Failed to upload profile image');
+          }
+
+          const { url } = await uploadResponse.json();
+          imageUrl = url;
+          console.log('Profile image uploaded:', imageUrl);
+        } catch (error) {
+          console.error('Error uploading profile image:', error);
+          throw new Error('Failed to upload profile image');
+        }
       }
 
-      console.log('Submitting form data...');
+      // Prepare artist data
+      const artistData = {
+        ...formDataWithoutImage,
+        fee: feeValue,
+        profileImage: imageUrl,
+        languages: Array.isArray(formDataWithoutImage.languages) 
+          ? formDataWithoutImage.languages 
+          : [formDataWithoutImage.languages].filter(Boolean),
+      };
+
+      console.log('Submitting artist data:', artistData);
+      
       const response = await fetch('/api/artists', {
         method: 'POST',
-        body: formData,
-        // Important: Don't set Content-Type header, let the browser set it with the correct boundary
-        headers: {},
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(artistData),
       });
       
       console.log('Response status:', response.status);
 
       if (!response.ok) {
-        // Try to get the error message from the response
         let errorMessage = `HTTP error! status: ${response.status}`;
         try {
           const errorData = await response.text();
