@@ -122,7 +122,21 @@ export async function POST(request: Request) {
     const newArtist = await addArtist(artistData);
     return NextResponse.json(newArtist, { status: 201 });
   } catch (error) {
-    console.error('Error creating artist:', error);
+    console.error('Error in /api/artists POST:', error);
+    
+    // Log the full error with stack trace
+    const errorObj = error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      // @ts-ignore
+      code: error.code,
+      // @ts-ignore
+      status: error.status
+    } : error;
+    
+    console.error('Error details:', JSON.stringify(errorObj, null, 2));
+    
     const errorMessage = error instanceof Error 
       ? error.message 
       : typeof error === 'string' 
@@ -132,9 +146,16 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { 
         error: errorMessage,
-        details: error instanceof Error ? error.stack : undefined
+        // Only include stack trace in development
+        details: process.env.NODE_ENV === 'development' ? 
+          (error instanceof Error ? error.stack : JSON.stringify(error)) : 
+          undefined
       },
-      { status: 500 }
+      { 
+        status: error instanceof Error && 'status' in error ? 
+          // @ts-ignore
+          error.status : 500 
+      }
     );
   }
 }

@@ -149,8 +149,21 @@ export default function OnboardPage() {
       console.log('Response status:', response.status);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to submit form');
+        // Try to get the error message from the response
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.text();
+          console.error('Error response:', errorData);
+          try {
+            const jsonError = JSON.parse(errorData);
+            errorMessage = jsonError.error || errorMessage;
+          } catch (e) {
+            errorMessage = errorData || errorMessage;
+          }
+        } catch (e) {
+          console.error('Failed to parse error response:', e);
+        }
+        throw new Error(errorMessage);
       }
       
       // Redirect to success page
