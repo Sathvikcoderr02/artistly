@@ -10,6 +10,11 @@ interface SimpleKV {
 // Initialize KV client with proper typing
 let kv: VercelKV | SimpleKV;
 
+// Generate a unique ID
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+}
+
 // Initialize KV client with error handling
 try {
   if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
@@ -74,30 +79,50 @@ export async function getArtists(): Promise<Artist[]> {
   }
 }
 
-export async function addArtist(artist: Omit<Artist, 'id' | 'createdAt' | 'status' | 'reviewedAt' | 'reviewedBy'>): Promise<Artist> {
+export async function addArtist(artistData: Omit<Artist, 'id' | 'createdAt' | 'status' | 'reviewedAt' | 'reviewedBy' | 'rejectionReason'>): Promise<Artist> {
   try {
-    console.log('Adding new artist:', artist);
+    console.log('Adding new artist:', artistData.name);
     const artists = await getArtists();
     
     const newArtist: Artist = {
-      ...artist,
-      id: Date.now().toString(),
+      ...artistData,
+      id: generateId(),
       status: 'pending',
       createdAt: new Date().toISOString(),
       reviewedAt: undefined,
       reviewedBy: undefined,
-      rejectionReason: undefined
+      rejectionReason: undefined,
     };
     
     const updatedArtists = [...artists, newArtist];
-    console.log('Saving updated artists list:', updatedArtists.length);
     
-    // Convert to plain object to avoid any serialization issues
-    const serializedArtists = JSON.parse(JSON.stringify(updatedArtists));
-    
-    await kv.set(ARTISTS_KEY, serializedArtists);
-    console.log('Successfully saved artist');
-    return newArtist;
+    try {
+      // Convert to plain object to avoid any serialization issues
+      const serializedArtists = JSON.parse(JSON.stringify(updatedArtists));
+      console.log('Saving artists to KV store:', serializedArtists.length, 'artists');
+      
+      // Set with explicit return type and error handling
+      const result = await kv.set(ARTISTS_KEY, serializedArtists);
+      console.log('KV set result:', result);
+      
+      if (result === 'OK') {
+        console.log('Successfully added artist:', newArtist.id);
+        return newArtist;
+      } else {
+        console.error('Failed to save artist to KV store. Result:', result);
+        throw new Error('Failed to save artist to KV store');
+      }
+    } catch (kvError) {
+      console.error('KV store error:', kvError);
+      // Try to get the current state of the KV store for debugging
+      try {
+        const currentValue = await kv.get(ARTISTS_KEY);
+        console.log('Current KV store value:', currentValue);
+      } catch (e) {
+        console.error('Failed to get current KV store value:', e);
+      }
+      throw new Error(`KV store operation failed: ${kvError instanceof Error ? kvError.message : 'Unknown error'}`);
+    }
   } catch (error) {
     console.error('Error in addArtist:', error);
     throw new Error(`Failed to add artist: ${error instanceof Error ? error.message : 'Unknown error'}`);
