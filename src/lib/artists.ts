@@ -48,8 +48,26 @@ const ARTISTS_KEY = 'artists';
 
 export async function getArtists(): Promise<Artist[]> {
   try {
-    const artists = await kv.get<Artist[]>(ARTISTS_KEY);
-    return Array.isArray(artists) ? artists : [];
+    console.log('Fetching artists from KV...');
+    const result = await kv.get<Artist[]>(ARTISTS_KEY);
+    console.log('Raw KV response:', result);
+    
+    if (!result) {
+      console.log('No artists found in KV, returning empty array');
+      return [];
+    }
+    
+    // Ensure we always return an array, even if KV returns a single object
+    const artists = Array.isArray(result) ? result : [result];
+    console.log(`Found ${artists.length} artists`);
+    return artists.filter(artist => {
+      // Filter out any invalid entries
+      const isValid = artist && typeof artist === 'object' && 'id' in artist;
+      if (!isValid) {
+        console.warn('Found invalid artist entry:', artist);
+      }
+      return isValid;
+    });
   } catch (error) {
     console.error('Error fetching artists from KV:', error);
     return [];
@@ -57,41 +75,82 @@ export async function getArtists(): Promise<Artist[]> {
 }
 
 export async function addArtist(artist: Omit<Artist, 'id' | 'createdAt' | 'status' | 'reviewedAt' | 'reviewedBy'>): Promise<Artist> {
-  const artists = await getArtists();
-  const newArtist: Artist = {
-    ...artist,
-    id: Date.now().toString(),
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-    reviewedAt: undefined,
-    reviewedBy: undefined,
-    rejectionReason: undefined
-  };
-  
-  const updatedArtists = [...artists, newArtist];
-  await kv.set<Artist[]>(ARTISTS_KEY, updatedArtists);
-  return newArtist;
+  try {
+    console.log('Adding new artist:', artist);
+    const artists = await getArtists();
+    
+    const newArtist: Artist = {
+      ...artist,
+      id: Date.now().toString(),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      rejectionReason: undefined
+    };
+    
+    const updatedArtists = [...artists, newArtist];
+    console.log('Saving updated artists list:', updatedArtists.length);
+    
+    // Convert to plain object to avoid any serialization issues
+    const serializedArtists = JSON.parse(JSON.stringify(updatedArtists));
+    
+    await kv.set(ARTISTS_KEY, serializedArtists);
+    console.log('Successfully saved artist');
+    return newArtist;
+  } catch (error) {
+    console.error('Error in addArtist:', error);
+    throw new Error(`Failed to add artist: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export async function updateArtist(id: string, updates: UpdateArtistData): Promise<Artist | null> {
-  const artists = await getArtists();
-  const index = artists.findIndex(a => a.id === id);
-  
-  if (index === -1) return null;
-  
-  const updatedArtist: Artist = {
-    ...artists[index],
-    ...updates,
-    reviewedAt: updates.status !== 'pending' ? new Date().toISOString() : artists[index].reviewedAt,
-  };
-  
-  const updatedArtists = [...artists];
-  updatedArtists[index] = updatedArtist;
-  await kv.set<Artist[]>(ARTISTS_KEY, updatedArtists);
-  return updatedArtist;
+  try {
+    console.log(`Updating artist ${id} with:`, updates);
+    const artists = await getArtists();
+    const index = artists.findIndex(a => a.id === id);
+    
+    if (index === -1) {
+      console.error(`Artist with id ${id} not found`);
+      return null;
+    }
+    
+    const updatedArtist: Artist = {
+      ...artists[index],
+      ...updates,
+      reviewedAt: updates.status !== 'pending' ? new Date().toISOString() : artists[index].reviewedAt,
+    };
+    
+    const updatedArtists = [...artists];
+    updatedArtists[index] = updatedArtist;
+    
+    // Convert to plain object to avoid any serialization issues
+    const serializedArtists = JSON.parse(JSON.stringify(updatedArtists));
+    
+    await kv.set(ARTISTS_KEY, serializedArtists);
+    console.log(`Successfully updated artist ${id}`);
+    return updatedArtist;
+  } catch (error) {
+    console.error(`Error updating artist ${id}:`, error);
+    throw new Error(`Failed to update artist: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 export async function getArtistById(id: string): Promise<Artist | null> {
-  const artists = await getArtists();
-  return artists.find(artist => artist.id === id) || null;
+  try {
+    console.log(`Fetching artist with id: ${id}`);
+    const artists = await getArtists();
+    const artist = artists.find(artist => artist.id === id);
+    
+    if (!artist) {
+      console.warn(`Artist with id ${id} not found`);
+      return null;
+    }
+    
+    console.log(`Found artist:`, artist.name);
+    return artist;
+  } catch (error) {
+    console.error(`Error fetching artist ${id}:`, error);
+    return null;
+  }
 }
