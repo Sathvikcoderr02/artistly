@@ -79,29 +79,41 @@ export async function getArtists(): Promise<Artist[]> {
   }
 }
 
+// Helper function to ensure data is serializable
+function ensureSerializable<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data));
+}
+
 export async function addArtist(artistData: Omit<Artist, 'id' | 'createdAt' | 'status' | 'reviewedAt' | 'reviewedBy' | 'rejectionReason'>): Promise<Artist> {
   try {
     console.log('Adding new artist:', artistData.name);
-    const artists = await getArtists();
+    
+    // Ensure all data is serializable
+    const serializedData = ensureSerializable(artistData);
     
     const newArtist: Artist = {
-      ...artistData,
+      ...serializedData,
       id: generateId(),
       status: 'pending',
       createdAt: new Date().toISOString(),
-      reviewedAt: undefined,
-      reviewedBy: undefined,
-      rejectionReason: undefined,
+      // Explicitly set undefined values to null for KV store
+      reviewedAt: null,
+      reviewedBy: null,
+      rejectionReason: null,
     };
     
+    console.log('New artist data:', JSON.stringify(newArtist, null, 2));
+    
+    const artists = await getArtists();
     const updatedArtists = [...artists, newArtist];
     
     try {
-      // Convert to plain object to avoid any serialization issues
-      const serializedArtists = JSON.parse(JSON.stringify(updatedArtists));
-      console.log('Saving artists to KV store:', serializedArtists.length, 'artists');
+      console.log('Saving artists to KV store. Total artists:', updatedArtists.length);
       
-      // Set with explicit return type and error handling
+      // Ensure we're only saving serializable data
+      const serializedArtists = ensureSerializable(updatedArtists);
+      
+      // Save to KV store
       const result = await kv.set(ARTISTS_KEY, serializedArtists);
       console.log('KV set result:', result);
       
@@ -109,22 +121,45 @@ export async function addArtist(artistData: Omit<Artist, 'id' | 'createdAt' | 's
         console.log('Successfully added artist:', newArtist.id);
         return newArtist;
       } else {
-        console.error('Failed to save artist to KV store. Result:', result);
-        throw new Error('Failed to save artist to KV store');
+        console.error('Unexpected KV set result:', result);
+        throw new Error('Failed to save artist to KV store: Unexpected result');
       }
     } catch (kvError) {
       console.error('KV store error:', kvError);
+      
+      // Log the error details for debugging
+      if (kvError instanceof Error) {
+        console.error('KV Error details:', {
+          message: kvError.message,
+          stack: kvError.stack,
+          name: kvError.name
+        });
+      }
+      
       // Try to get the current state of the KV store for debugging
       try {
         const currentValue = await kv.get(ARTISTS_KEY);
-        console.log('Current KV store value:', currentValue);
+        console.log('Current KV store value type:', typeof currentValue);
+        console.log('Current KV store value length:', 
+          typeof currentValue === 'string' ? currentValue.length : 'N/A');
       } catch (e) {
         console.error('Failed to get current KV store value:', e);
       }
+      
       throw new Error(`KV store operation failed: ${kvError instanceof Error ? kvError.message : 'Unknown error'}`);
     }
   } catch (error) {
     console.error('Error in addArtist:', error);
+    
+    // Log additional error details
+    if (error instanceof Error) {
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+    }
+    
     throw new Error(`Failed to add artist: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

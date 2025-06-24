@@ -12,13 +12,13 @@ export interface Artist {
   phone: string;
   languages: string[];
   imageUrl: string;
-  image?: string; // Keeping for backward compatibility
-  profileImage?: string; // New field for profile image URL
+  image?: string | null; // Keeping for backward compatibility
+  profileImage?: string | null; // New field for profile image URL
   status: ApprovalStatus;
-  rejectionReason?: string;
-  reviewedAt?: string;
-  reviewedBy?: string;
-  updatedAt?: string;
+  rejectionReason?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
+  updatedAt?: string | null;
   createdAt: string;
 }
 
