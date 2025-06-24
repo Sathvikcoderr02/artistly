@@ -107,39 +107,46 @@ export default function OnboardPage() {
       console.log('Fee range from form:', data.feeRange);
       
       const formData = new FormData();
-      const name = data.stageName || data.fullName;
       const category = data.categories[0] || 'Other';
       const city = data.location || 'Not specified';
-      // Remove currency symbol and commas, then take the first value if it's a range
-      const feeValue = (data.feeRange?.split('-')[0]?.trim() || '0')
-        .replace(/[^0-9]/g, ''); // Remove all non-numeric characters
       
-      console.log('Processed fee value:', feeValue);
-      
-      formData.append('name', name);
+      // Set form data with field names that match the API expectations
+      formData.append('name', data.stageName || data.fullName);
       formData.append('category', category);
       formData.append('city', city);
+      
+      // Parse fee value (remove currency symbols and commas)
+      const feeValue = data.feeRange ? 
+        (data.feeRange.split('-')[0] || '0').replace(/[^0-9.]/g, '') : '0';
+      console.log('Processed fee value:', feeValue);
       formData.append('fee', feeValue);
+      
       formData.append('bio', data.bio);
       formData.append('experience', data.experience);
-      formData.append('languages', data.languages.join(','));
+      formData.append('languages', Array.isArray(data.languages) ? data.languages.join(',') : '');
       formData.append('email', data.email);
       formData.append('phone', data.phone);
       
-      // Log all form data entries
+      // Log all form data entries for debugging
       console.log('FormData entries:');
       for (const [key, value] of formData.entries()) {
         console.log(`${key}:`, value);
       }
       
+      // Add image if present
       if (data.profileImage) {
-        formData.append('profileImage', data.profileImage);
+        formData.append('image', data.profileImage);
       }
 
+      console.log('Submitting form data...');
       const response = await fetch('/api/artists', {
         method: 'POST',
         body: formData,
+        // Important: Don't set Content-Type header, let the browser set it with the correct boundary
+        headers: {},
       });
+      
+      console.log('Response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

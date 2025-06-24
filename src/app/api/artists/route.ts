@@ -37,36 +37,48 @@ export async function POST(request: Request) {
 
     if (contentType?.includes('multipart/form-data')) {
       const formData = await request.formData();
+      console.log('Received form data with fields:', [...formData.keys()]);
       
       // Handle file upload if exists
       let imageUrl = '';
       const imageFile = formData.get('image') as File | null;
       
       if (imageFile && imageFile.size > 0) {
+        console.log('Processing image file:', imageFile.name, imageFile.size, 'bytes');
         // In a real app, you would upload this to a storage service
         // For now, we'll just store a placeholder
         imageUrl = `/uploads/${Date.now()}-${imageFile.name}`;
+      } else {
+        console.log('No image file found in form data');
       }
       
-      // Get other form fields
-      const name = formData.get('name') as string;
-      const email = formData.get('email') as string;
-      const phone = formData.get('phone') as string;
-      const category = formData.get('category') as string;
-      const city = formData.get('city') as string;
-      const bio = (formData.get('bio') as string) || '';
-      const experience = (formData.get('experience') as string) || '';
-      const languages = (formData.get('languages') as string || '')
-        .split(',')
-        .map(lang => lang.trim())
-        .filter(Boolean);
+      // Get other form fields with proper type checking and fallbacks
+      const getString = (key: string): string => {
+        const value = formData.get(key);
+        return value ? value.toString() : '';
+      };
+
+      const name = getString('name');
+      const email = getString('email');
+      const phone = getString('phone');
+      const category = getString('category');
+      const city = getString('city');
+      const bio = getString('bio');
+      const experience = getString('experience');
+      
+      // Parse languages
+      const languagesStr = getString('languages');
+      const languages = languagesStr 
+        ? languagesStr.split(',').map(lang => lang.trim()).filter(Boolean)
+        : [];
       
       // Parse fee
       let fee = 0;
-      const feeValue = formData.get('fee') as string;
+      const feeValue = getString('fee');
       if (feeValue) {
         const numericValue = feeValue.replace(/[^0-9.]/g, '');
         fee = Math.max(0, Math.floor(Number(numericValue) * 100) || 0);
+        console.log(`Parsed fee: ${feeValue} -> ${fee} paise`);
       }
       
       artistData = {
@@ -111,8 +123,17 @@ export async function POST(request: Request) {
     return NextResponse.json(newArtist, { status: 201 });
   } catch (error) {
     console.error('Error creating artist:', error);
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : typeof error === 'string' 
+        ? error 
+        : 'Failed to create artist';
+    
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to create artist' },
+      { 
+        error: errorMessage,
+        details: error instanceof Error ? error.stack : undefined
+      },
       { status: 500 }
     );
   }
