@@ -14,8 +14,7 @@ interface ArtistFormData {
   experience: string;
   languages: string[];
   fee: number;
-  imageUrl: string;  // For backward compatibility
-  profileImage: string;
+  imageUrl: string;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
   updatedAt: string;
@@ -100,14 +99,10 @@ export async function POST(request: Request) {
         languages,
         email,
         phone,
-        imageUrl: imageUrl,  // For backward compatibility
-        profileImage: imageUrl,
+        imageUrl: imageUrl,
         status: 'pending' as const,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        reviewedAt: undefined,
-        reviewedBy: undefined,
-        rejectionReason: undefined
+        updatedAt: new Date().toISOString()
       };
     } else {
       // Parse JSON body
@@ -147,14 +142,10 @@ export async function POST(request: Request) {
           : [data.languages].filter(Boolean),
         email: data.email,
         phone: data.phone,
-        imageUrl: data.profileImage || '',  // For backward compatibility
-        profileImage: data.profileImage || '',
+        imageUrl: data.profileImage || '',
         status: 'pending' as const,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        reviewedAt: undefined,
-        reviewedBy: undefined,
-        rejectionReason: undefined
+        updatedAt: new Date().toISOString()
       };
     }
     

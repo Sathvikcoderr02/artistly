@@ -153,7 +153,7 @@ export default function OnboardPage() {
           : [data.languages].filter(Boolean),
         email: data.email,
         phone: data.phone,
-        profileImage: imageUrl,
+        imageUrl: imageUrl,  // Using imageUrl instead of profileImage
         status: 'pending',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
