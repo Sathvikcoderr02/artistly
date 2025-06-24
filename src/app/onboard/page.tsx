@@ -105,42 +105,22 @@ export default function OnboardPage() {
       
       console.log('Form data:', data);
       
-      const formData = new FormData();
-      const category = data.categories[0] || 'Other';
+      const category = data.categories?.[0] || 'Other';
       const city = data.location || 'Not specified';
-      
-      // Set form data with field names that match the API expectations
-      formData.append('name', data.stageName || data.fullName);
-      formData.append('category', category);
-      formData.append('city', city);
+      const name = data.stageName || data.fullName;
       
       // Parse fee value (remove currency symbols and commas)
       const feeValue = data.feeRange ? 
         (data.feeRange.split('-')[0] || '0').replace(/[^0-9.]/g, '') : '0';
+      
       console.log('Processed fee value:', feeValue);
-      formData.append('fee', feeValue);
       
-      formData.append('bio', data.bio);
-      formData.append('experience', data.experience);
-      formData.append('languages', Array.isArray(data.languages) ? data.languages.join(',') : '');
-      formData.append('email', data.email);
-      formData.append('phone', data.phone);
-      
-      // Log all form data entries for debugging
-      console.log('FormData entries:');
-      for (const [key, value] of formData.entries()) {
-        console.log(`${key}:`, value);
-      }
-      
-      // Extract profile image if it exists
-      const { profileImage, ...formDataWithoutImage } = data;
-      let imageUrl = '';
-
       // Upload profile image if provided
-      if (profileImage) {
+      let imageUrl = '';
+      if (data.profileImage) {
         try {
           const uploadFormData = new FormData();
-          uploadFormData.append('file', profileImage);
+          uploadFormData.append('file', data.profileImage);
           
           const uploadResponse = await fetch('/api/upload', {
             method: 'POST',
@@ -162,12 +142,21 @@ export default function OnboardPage() {
 
       // Prepare artist data
       const artistData = {
-        ...formDataWithoutImage,
-        fee: feeValue,
+        name,
+        category,
+        city,
+        fee: Number(feeValue) || 0,
+        bio: data.bio,
+        experience: data.experience,
+        languages: Array.isArray(data.languages) 
+          ? data.languages 
+          : [data.languages].filter(Boolean),
+        email: data.email,
+        phone: data.phone,
         profileImage: imageUrl,
-        languages: Array.isArray(formDataWithoutImage.languages) 
-          ? formDataWithoutImage.languages 
-          : [formDataWithoutImage.languages].filter(Boolean),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       console.log('Submitting artist data:', artistData);
