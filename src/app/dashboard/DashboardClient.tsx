@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Artist, ApprovalStatus } from '@/types/artist';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,75 @@ export default function DashboardClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const getDummyArtists = useCallback((): Artist[] => {
+    // Add default image URL for dummy data
+    const defaultImageUrl = '/images/placeholder-user.jpg';
+    const categories = ['Singer', 'Dancer', 'Musician', 'Comedian', 'Actor', 'Magician'];
+    const cities = ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Kolkata'];
+    const languages = ['English', 'Hindi', 'Tamil', 'Telugu', 'Kannada', 'Malayalam'];
+    const statuses: ApprovalStatus[] = ['pending', 'approved', 'rejected'];
+    
+    return Array.from({ length: 5 }, (_, i) => {
+      const status = statuses[i % statuses.length];
+      const category = categories[i % categories.length];
+      const city = cities[i % cities.length];
+      const langCount = Math.max(1, Math.floor(Math.random() * 3));
+      const artistLanguages = Array.from({ length: langCount }, 
+        () => languages[Math.floor(Math.random() * languages.length)]
+      );
+      
+      return {
+        id: `dummy-${i + 1}`,
+        name: `Artist ${i + 1}`,
+        email: `artist${i + 1}@example.com`,
+        phone: `+91${Math.floor(7000000000 + Math.random() * 3000000000)}`,
+        category,
+        experience: `${Math.floor(Math.random() * 10) + 1} years`,
+        fee: Math.floor(Math.random() * 50000) + 5000,
+        city,
+        state: city === 'Mumbai' ? 'Maharashtra' : 
+               city === 'Delhi' ? 'Delhi' :
+               city === 'Bangalore' ? 'Karnataka' :
+               city === 'Hyderabad' ? 'Telangana' :
+               city === 'Chennai' ? 'Tamil Nadu' : 'West Bengal',
+        languages: [...new Set(artistLanguages)],
+        bio: `Professional ${category.toLowerCase()} with experience in live performances.`,
+        status,
+        createdAt: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date().toISOString(),
+        reviewedAt: status !== 'pending' ? new Date().toISOString() : null,
+        reviewedBy: status !== 'pending' ? 'admin@example.com' : null,
+        rejectionReason: status === 'rejected' ? 'Insufficient portfolio' : null,
+        imageUrl: defaultImageUrl,
+        isDummy: true, // Flag to identify dummy data
+        socialMedia: {
+          instagram: null,
+          youtube: null,
+          facebook: null,
+          twitter: null,
+          website: null
+        }
+      };
+    });
+  }, []);
+
+  const fetchArtists = useCallback(async () => {
+    try {
+      const response = await fetch('/api/artists');
+      if (!response.ok) {
+        throw new Error('Failed to fetch artists');
+      }
+      const data = await response.json();
+      return data;
+    } catch (fetchError) {
+      console.warn('Using dummy data due to API error:', fetchError);
+      toast('Using sample data (API unavailable)', { icon: 'ℹ️' });
+      return getDummyArtists();
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getDummyArtists]);
+  
   useEffect(() => {
     const loadArtists = async () => {
       try {
@@ -27,24 +96,7 @@ export default function DashboardClient() {
     };
 
     loadArtists();
-  }, []);
-
-  const fetchArtists = async () => {
-    try {
-      const response = await fetch('/api/artists');
-      if (!response.ok) {
-        throw new Error('Failed to fetch artists');
-      }
-      const data = await response.json();
-      return data;
-    } catch (fetchError) {
-      console.error('Error fetching artists:', fetchError);
-      toast.error('Failed to load artists');
-      throw fetchError;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [fetchArtists]);
 
 
   const getStatusBadge = (status: ApprovalStatus) => {
