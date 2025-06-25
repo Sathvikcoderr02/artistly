@@ -5,6 +5,7 @@ import { createClient, VercelKV } from '@vercel/kv';
 interface SimpleKV {
   get: <T = unknown>(key: string) => Promise<T | null>;
   set: <T = unknown>(key: string, value: T) => Promise<'OK'>;
+  del: (key: string) => Promise<number>;
 }
 
 // Initialize KV client with proper type
@@ -38,6 +39,9 @@ try {
     async set(key: string, value: unknown): Promise<'OK'> {
       store.set(key, value);
       return 'OK';
+    },
+    async del(key: string): Promise<number> {
+      return store.delete(key) ? 1 : 0;
     }
   };
 }
