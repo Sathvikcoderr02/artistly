@@ -103,6 +103,9 @@ export default function OnboardPage() {
     try {
       setIsSubmitting(true);
       
+      // Show success alert immediately
+      alert('Registration submitted successfully!\n\nThank you for registering. Your application is under review.');
+      
       console.log('Form data:', data);
       
       const category = data.categories?.[0] || 'Other';
@@ -188,16 +191,8 @@ export default function OnboardPage() {
         throw new Error(errorMessage);
       }
       
-      // Show success alert/modal
-      const userConfirmed = window.confirm('Registration submitted successfully!\n\nThank you for registering. Your application is under review.');
-      
-      // Redirect to success page after user acknowledges the alert
-      if (userConfirmed) {
-        router.push('/artists/success');
-      } else {
-        // Still redirect even if they somehow dismiss the alert
-        router.push('/artists/success');
-      }
+      // Redirect to success page
+      router.push('/artists/success');
     } catch (error) {
       console.error('Error saving artist submission:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to submit form. Please try again.';
