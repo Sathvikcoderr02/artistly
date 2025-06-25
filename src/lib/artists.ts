@@ -6,6 +6,8 @@ interface SimpleKV {
   get: <T = unknown>(key: string) => Promise<T | null>;
   set: <T = unknown>(key: string, value: T) => Promise<'OK'>;
   del: (key: string) => Promise<number>;
+  ping?: () => Promise<string>;
+  info?: () => Promise<Record<string, unknown>>;
 }
 
 // Initialize KV client with proper type
@@ -17,34 +19,62 @@ function generateId(): string {
 }
 
 // Initialize KV client with error handling
-try {
-  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
-    throw new Error('Missing KV configuration');
-  }
-  
-  kv = createClient({
-    url: process.env.KV_REST_API_URL,
-    token: process.env.KV_REST_API_TOKEN,
-  });
-  console.log('Connected to Vercel KV store');
-} catch (error) {
-  console.warn('Failed to initialize KV client, using in-memory store:', error);
-  
-  // Fallback in-memory store for development
-  const store = new Map<string, unknown>();
-  kv = {
-    async get<T = unknown>(key: string): Promise<T | null> {
-      return (store.get(key) as T) || null;
-    },
-    async set(key: string, value: unknown): Promise<'OK'> {
-      store.set(key, value);
-      return 'OK';
-    },
-    async del(key: string): Promise<number> {
-      return store.delete(key) ? 1 : 0;
+const initKV = async () => {
+  try {
+    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+      throw new Error('Missing KV_REST_API_URL or KV_REST_API_TOKEN environment variables');
     }
-  };
-}
+    
+    const client = createClient({
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN,
+    });
+    
+    // Test the connection
+    await client.ping();
+    console.log('Successfully connected to Vercel KV store');
+    return client;
+    
+  } catch (error) {
+    console.error('Failed to initialize KV client:', error);
+    throw error; // Re-throw to be handled by the fallback
+  }
+};
+
+// Initialize KV with fallback
+(async () => {
+  try {
+    kv = await initKV();
+  } catch (error) {
+    console.warn('Using in-memory KV store as fallback:', error);
+    
+    // Fallback in-memory store
+    const store = new Map<string, unknown>();
+    kv = {
+      async get<T = unknown>(key: string): Promise<T | null> {
+        return (store.get(key) as T) || null;
+      },
+      async set(key: string, value: unknown): Promise<'OK'> {
+        store.set(key, value);
+        return 'OK';
+      },
+      async del(key: string): Promise<number> {
+        return store.delete(key) ? 1 : 0;
+      },
+      async ping(): Promise<string> {
+        return 'PONG';
+      },
+      async info(): Promise<Record<string, unknown>> {
+        return {
+          store: 'in-memory',
+          keys: Array.from(store.keys()),
+          size: store.size,
+          isFallback: true
+        };
+      }
+    };
+  }
+})();
 
 // Type for updating an artist
 type UpdateArtistData = Partial<Omit<Artist, 'id' | 'createdAt'>>;
