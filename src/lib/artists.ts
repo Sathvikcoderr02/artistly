@@ -11,7 +11,29 @@ interface SimpleKV {
 }
 
 // Initialize KV client with proper type
-export let kv: VercelKV | SimpleKV;
+export let kv: VercelKV | undefined;
+
+// Initialize KV client with error handling
+try {
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+
+  console.log('[KV INIT]', {
+    urlExists: !!url,
+    tokenExists: !!token,
+    nodeEnv: process.env.NODE_ENV,
+  });
+
+  if (!url || !token) {
+    throw new Error('KV environment variables are missing');
+  }
+
+  kv = createClient({ url, token });
+  console.log('✅ KV client initialized successfully');
+} catch (error) {
+  console.error('❌ KV client initialization failed:', error);
+  kv = undefined;
+}
 
 // Generate a unique ID
 function generateId(): string {
