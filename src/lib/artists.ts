@@ -1,39 +1,59 @@
 import { Artist } from '@/types/artist';
 import { createClient, VercelKV } from '@vercel/kv';
 
-// Define KV client interface for fallback
-interface SimpleKV {
-  get: <T = unknown>(key: string) => Promise<T | null>;
-  set: <T = unknown>(key: string, value: T) => Promise<'OK'>;
-  del: (key: string) => Promise<number>;
-  ping?: () => Promise<string>;
-  info?: () => Promise<Record<string, unknown>>;
-}
+// Simple in-memory store implementation
+class InMemoryKV {
+  private store: Map<string, unknown>;
 
-// Initialize KV client with proper type
-export let kv: VercelKV | undefined;
-
-// Initialize KV client with error handling
-try {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
-
-  console.log('[KV INIT]', {
-    urlExists: !!url,
-    tokenExists: !!token,
-    nodeEnv: process.env.NODE_ENV,
-  });
-
-  if (!url || !token) {
-    throw new Error('KV environment variables are missing');
+  constructor() {
+    this.store = new Map();
   }
 
-  kv = createClient({ url, token });
-  console.log('✅ KV client initialized successfully');
-} catch (error) {
-  console.error('❌ KV client initialization failed:', error);
-  kv = undefined;
+  async get<T = unknown>(key: string): Promise<T | null> {
+    try {
+      return (this.store.get(key) as T) || null;
+    } catch (error) {
+      console.error('Error in in-memory get:', error);
+      return null;
+    }
+  }
+
+  async set<T = unknown>(key: string, value: T): Promise<'OK'> {
+    try {
+      this.store.set(key, value);
+      return 'OK';
+    } catch (error) {
+      console.error('Error in in-memory set:', error);
+      throw error;
+    }
+  }
+
+  async del(key: string): Promise<number> {
+    try {
+      return this.store.delete(key) ? 1 : 0;
+    } catch (error) {
+      console.error('Error in in-memory del:', error);
+      return 0;
+    }
+  }
+
+  async ping(): Promise<string> {
+    return 'PONG';
+  }
+
+  async info(): Promise<Record<string, unknown>> {
+    return {
+      store: 'in-memory',
+      keys: Array.from(this.store.keys()),
+      size: this.store.size,
+      isFallback: true,
+      warning: 'This is an in-memory store and will not persist between deployments'
+    };
+  }
 }
+
+// Initialize KV client
+export let kv: VercelKV | InMemoryKV;
 
 // Generate a unique ID
 function generateId(): string {
@@ -77,47 +97,7 @@ function generateId(): string {
 // Initialize in-memory KV store as fallback
 function initInMemoryKV() {
   console.warn('Using in-memory KV store as fallback');
-  const store = new Map<string, unknown>();
-  
-  kv = {
-    async get<T = unknown>(key: string): Promise<T | null> {
-      try {
-        return (store.get(key) as T) || null;
-      } catch (error) {
-        console.error('Error in in-memory get:', error);
-        return null;
-      }
-    },
-    async set(key: string, value: unknown): Promise<'OK'> {
-      try {
-        store.set(key, value);
-        return 'OK';
-      } catch (error) {
-        console.error('Error in in-memory set:', error);
-        throw error;
-      }
-    },
-    async del(key: string): Promise<number> {
-      try {
-        return store.delete(key) ? 1 : 0;
-      } catch (error) {
-        console.error('Error in in-memory del:', error);
-        return 0;
-      }
-    },
-    async ping(): Promise<string> {
-      return 'PONG';
-    },
-    async info(): Promise<Record<string, unknown>> {
-      return {
-        store: 'in-memory',
-        keys: Array.from(store.keys()),
-        size: store.size,
-        isFallback: true,
-        warning: 'This is an in-memory store and will not persist between deployments'
-      };
-    }
-  };
+  kv = new InMemoryKV();
 }
 
 // Type for updating an artist
