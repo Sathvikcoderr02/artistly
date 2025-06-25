@@ -68,16 +68,29 @@ export default function DashboardClient() {
 
   const fetchArtists = useCallback(async () => {
     try {
-      const response = await fetch('/api/artists');
-      if (!response.ok) {
-        throw new Error('Failed to fetch artists');
+      // Always get dummy data first
+      const dummyArtists = getDummyArtists();
+      
+      // Try to fetch real data
+      try {
+        const response = await fetch('/api/artists');
+        if (response.ok) {
+          const apiArtists = await response.json();
+          // Combine dummy data with real data, removing any duplicates by ID
+          const combinedArtists = [
+            ...dummyArtists,
+            ...(Array.isArray(apiArtists) ? apiArtists.filter(
+              (apiArtist: Artist) => !dummyArtists.some(d => d.id === apiArtist.id)
+            ) : [])
+          ];
+          return combinedArtists;
+        }
+      } catch (apiError) {
+        console.warn('API fetch failed, using dummy data only:', apiError);
       }
-      const data = await response.json();
-      return data;
-    } catch (fetchError) {
-      console.warn('Using dummy data due to API error:', fetchError);
-      toast('Using sample data (API unavailable)', { icon: 'ℹ️' });
-      return getDummyArtists();
+      
+      // If we get here, return just the dummy data
+      return dummyArtists;
     } finally {
       setIsLoading(false);
     }
