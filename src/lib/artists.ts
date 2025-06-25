@@ -1,4 +1,4 @@
-import { Artist, ApprovalStatus } from '@/types/artist';
+import { Artist } from '@/types/artist';
 import { createClient, VercelKV } from '@vercel/kv';
 
 // Define KV client interface for fallback
@@ -7,8 +7,8 @@ interface SimpleKV {
   set: <T = unknown>(key: string, value: T) => Promise<'OK'>;
 }
 
-// Initialize KV client with proper typing
-let kv: VercelKV | SimpleKV;
+// Initialize KV client with proper type
+export let kv: VercelKV | SimpleKV;
 
 // Generate a unique ID
 function generateId(): string {
@@ -42,39 +42,76 @@ try {
   };
 }
 
-type UpdateArtistData = {
-  status: ApprovalStatus;
-  rejectionReason?: string;
-  reviewedAt?: string;
-  reviewedBy?: string;
-};
+// Type for updating an artist
+type UpdateArtistData = Partial<Omit<Artist, 'id' | 'createdAt'>>;
 
 const ARTISTS_KEY = 'artists';
 
 export async function getArtists(): Promise<Artist[]> {
   try {
-    console.log('Fetching artists from KV...');
-    const result = await kv.get<Artist[]>(ARTISTS_KEY);
-    console.log('Raw KV response:', result);
+    console.log('🔵 [getArtists] Fetching artists from KV...');
+    const result = await kv.get<unknown>(ARTISTS_KEY);
     
+    // If no data exists, return empty array
     if (!result) {
-      console.log('No artists found in KV, returning empty array');
+      console.log('ℹ️ [getArtists] No artists found in KV, returning empty array');
       return [];
     }
     
-    // Ensure we always return an array, even if KV returns a single object
-    const artists = Array.isArray(result) ? result : [result];
-    console.log(`Found ${artists.length} artists`);
-    return artists.filter(artist => {
-      // Filter out any invalid entries
-      const isValid = artist && typeof artist === 'object' && 'id' in artist;
-      if (!isValid) {
-        console.warn('Found invalid artist entry:', artist);
+    // Defensive: detect bad strings or wrong types
+    if (typeof result === 'string') {
+      console.warn('⚠️ [getArtists] KV value was a string, possibly corrupted:', result.slice(0, 50));
+      // Attempt to parse it if it's a JSON string
+      try {
+        const parsed = JSON.parse(result);
+        if (Array.isArray(parsed)) {
+          console.log('✓ [getArtists] Successfully parsed corrupted string as JSON array');
+          return parsed;
+        }
+      } catch (parseError) {
+        console.error('❌ [getArtists] Failed to parse corrupted KV value:', parseError);
       }
-      return isValid;
+      
+      // If we can't parse it, reset the KV store
+      console.warn('⚠️ [getArtists] Resetting corrupted KV store');
+      await kv.set(ARTISTS_KEY, []);
+      return [];
+    }
+    
+    // If it's not an array, reset it
+    if (!Array.isArray(result)) {
+      console.warn('⚠️ [getArtists] KV returned a non-array. Resetting to empty array');
+      await kv.set(ARTISTS_KEY, []);
+      return [];
+    }
+    
+    // Filter out any invalid entries
+    const validArtists = result.filter((artist: unknown): artist is Artist => {
+      if (!artist || typeof artist !== 'object') {
+        console.warn('⚠️ [getArtists] Invalid artist entry (not an object):', artist);
+        return false;
+      }
+      
+      const hasRequiredFields = 'id' in artist && 'name' in artist;
+      if (!hasRequiredFields) {
+        console.warn('⚠️ [getArtists] Invalid artist entry (missing required fields):', artist);
+        return false;
+      }
+      
+      return true;
     });
+    
+    // If we filtered out any invalid entries, save the cleaned version
+    if (validArtists.length !== result.length) {
+      console.warn(`⚠️ [getArtists] Filtered out ${result.length - validArtists.length} invalid artists`);
+      await kv.set(ARTISTS_KEY, validArtists);
+    }
+    
+    console.log(`✅ [getArtists] Returning ${validArtists.length} valid artists`);
+    return validArtists;
   } catch (error) {
-    console.error('Error fetching artists from KV:', error);
+    console.error('❌ [getArtists] Error fetching artists from KV:', error);
+    // In case of error, return empty array to prevent breaking the application
     return [];
   }
 }
@@ -84,79 +121,120 @@ function ensureSerializable<T>(data: T): T {
   return JSON.parse(JSON.stringify(data));
 }
 
-export async function addArtist(artistData: Omit<Artist, 'id' | 'createdAt' | 'status' | 'reviewedAt' | 'reviewedBy' | 'rejectionReason'>): Promise<Artist> {
+export async function addArtist(
+  artistData: Omit<Artist, 'id' | 'createdAt' | 'status' | 'reviewedAt' | 'reviewedBy' | 'rejectionReason'>
+): Promise<Artist> {
   try {
-    console.log('Adding new artist:', artistData.name);
+    console.log('🔵 [addArtist] Adding new artist:', artistData.name);
     
-    // Ensure all data is serializable
-    const serializedData = ensureSerializable(artistData);
+    // Validate required fields
+    if (!artistData.name || !artistData.email) {
+      throw new Error('Name and email are required');
+    }
     
+    // Ensure all data is serializable and sanitize input
+    const serializedData = ensureSerializable({
+      ...artistData,
+      // Ensure arrays are properly initialized
+      languages: Array.isArray(artistData.languages) 
+        ? artistData.languages.filter(lang => typeof lang === 'string')
+       : [],
+      // Ensure fee is a number
+      fee: Number(artistData.fee) || 0,
+      // Ensure imageUrl is a string
+      imageUrl: String(artistData.imageUrl || '')
+    });
+    
+    // Create the new artist object with all required fields
     const newArtist: Artist = {
       ...serializedData,
       id: generateId(),
       status: 'pending',
       createdAt: new Date().toISOString(),
-      // Explicitly set undefined values to null for KV store
+      // Explicitly set optional fields to null for KV store
       reviewedAt: null,
       reviewedBy: null,
       rejectionReason: null,
+      // Ensure we have all required fields with defaults
+      category: serializedData.category || 'Other',
+      city: serializedData.city || '',
+      bio: serializedData.bio || '',
+      experience: serializedData.experience || '',
+      phone: serializedData.phone || '',
+      imageUrl: serializedData.imageUrl || '',
+      image: serializedData.imageUrl || null, // Backward compatibility
+      profileImage: serializedData.imageUrl || null // New field
     };
     
-    console.log('New artist data:', JSON.stringify(newArtist, null, 2));
+    console.log('🔄 [addArtist] New artist data:', {
+      id: newArtist.id,
+      name: newArtist.name,
+      email: newArtist.email,
+      imageUrl: newArtist.imageUrl ? '✅' : '❌'
+    });
     
+    // Get existing artists
     const artists = await getArtists();
+    
+    // Check for duplicate email
+    const emailExists = artists.some(a => a.email === newArtist.email && a.id !== newArtist.id);
+    if (emailExists) {
+      throw new Error('An artist with this email already exists');
+    }
+    
     const updatedArtists = [...artists, newArtist];
     
     try {
-      console.log('Saving artists to KV store. Total artists:', updatedArtists.length);
+      console.log(`🔄 [addArtist] Saving ${updatedArtists.length} artists to KV store`);
       
       // Ensure we're only saving serializable data
       const serializedArtists = ensureSerializable(updatedArtists);
       
       // Save to KV store
       const result = await kv.set(ARTISTS_KEY, serializedArtists);
-      console.log('KV set result:', result);
       
       if (result === 'OK') {
-        console.log('Successfully added artist:', newArtist.id);
+        console.log(`✅ [addArtist] Successfully added artist: ${newArtist.id}`);
         return newArtist;
       } else {
-        console.error('Unexpected KV set result:', result);
+        console.error('❌ [addArtist] Unexpected KV set result:', result);
         throw new Error('Failed to save artist to KV store: Unexpected result');
       }
     } catch (kvError) {
-      console.error('KV store error:', kvError);
+      console.error('❌ [addArtist] KV store error:', kvError);
       
-      // Log the error details for debugging
+      // Log detailed error information
       if (kvError instanceof Error) {
-        console.error('KV Error details:', {
+        console.error('🔍 [addArtist] KV Error details:', {
           message: kvError.message,
-          stack: kvError.stack,
-          name: kvError.name
+          name: kvError.name,
+          stack: kvError.stack?.split('\n').slice(0, 3).join('\n') + '...'
         });
       }
       
       // Try to get the current state of the KV store for debugging
       try {
         const currentValue = await kv.get(ARTISTS_KEY);
-        console.log('Current KV store value type:', typeof currentValue);
-        console.log('Current KV store value length:', 
-          typeof currentValue === 'string' ? currentValue.length : 'N/A');
+        console.log('🔍 [addArtist] Current KV store value type:', typeof currentValue);
+        if (typeof currentValue === 'string') {
+          console.log('🔍 [addArtist] KV store value (first 200 chars):', 
+            currentValue.length > 200 ? currentValue.substring(0, 200) + '...' : currentValue);
+        }
       } catch (e) {
-        console.error('Failed to get current KV store value:', e);
+        console.error('❌ [addArtist] Failed to get current KV store value:', e);
       }
       
       throw new Error(`KV store operation failed: ${kvError instanceof Error ? kvError.message : 'Unknown error'}`);
     }
   } catch (error) {
-    console.error('Error in addArtist:', error);
+    console.error('❌ [addArtist] Error:', error);
     
     // Log additional error details
     if (error instanceof Error) {
-      console.error('Error details:', {
+      console.error('🔍 [addArtist] Error details:', {
         message: error.message,
-        stack: error.stack,
-        name: error.name
+        name: error.name,
+        stack: error.stack?.split('\n').slice(0, 3).join('\n') + '...'
       });
     }
     
@@ -166,29 +244,56 @@ export async function addArtist(artistData: Omit<Artist, 'id' | 'createdAt' | 's
 
 export async function updateArtist(id: string, updates: UpdateArtistData): Promise<Artist | null> {
   try {
-    console.log(`Updating artist ${id} with:`, updates);
+    console.log(`🔵 [updateArtist] Updating artist: ${id}`);
+    
+    if (!id) {
+      throw new Error('Artist ID is required');
+    }
+    
     const artists = await getArtists();
     const index = artists.findIndex(a => a.id === id);
     
     if (index === -1) {
-      console.error(`Artist with id ${id} not found`);
+      console.warn(`⚠️ [updateArtist] Artist not found: ${id}`);
       return null;
     }
     
+    // Sanitize and validate updates
+    const sanitizedUpdates = ensureSerializable(updates);
+    
+    // Preserve the original creation date and ID
     const updatedArtist: Artist = {
       ...artists[index],
-      ...updates,
-      reviewedAt: updates.status !== 'pending' ? new Date().toISOString() : artists[index].reviewedAt,
+      ...sanitizedUpdates,
+      id, // Ensure ID doesn't change
+      updatedAt: new Date().toISOString(),
+      // Ensure required fields are not removed
+      name: sanitizedUpdates.name || artists[index].name,
+      email: sanitizedUpdates.email || artists[index].email,
+      category: sanitizedUpdates.category || artists[index].category || 'Other',
+      // Ensure arrays are properly initialized
+      languages: Array.isArray(sanitizedUpdates.languages) 
+        ? sanitizedUpdates.languages.filter(lang => typeof lang === 'string')
+        : artists[index].languages || []
     };
+    
+    console.log(`🔄 [updateArtist] Updated artist data:`, {
+      id: updatedArtist.id,
+      name: updatedArtist.name,
+      changes: Object.keys(sanitizedUpdates)
+    });
     
     const updatedArtists = [...artists];
     updatedArtists[index] = updatedArtist;
     
-    // Convert to plain object to avoid any serialization issues
-    const serializedArtists = JSON.parse(JSON.stringify(updatedArtists));
+    // Save the updated artists array
+    const result = await kv.set(ARTISTS_KEY, updatedArtists);
     
-    await kv.set(ARTISTS_KEY, serializedArtists);
-    console.log(`Successfully updated artist ${id}`);
+    if (result !== 'OK') {
+      throw new Error('Failed to save updated artist data');
+    }
+    
+    console.log(`✅ [updateArtist] Successfully updated artist: ${id}`);
     return updatedArtist;
   } catch (error) {
     console.error(`Error updating artist ${id}:`, error);
