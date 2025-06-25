@@ -2,13 +2,6 @@ import { kv } from '@/lib/artists';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
-  if (process.env.NODE_ENV !== 'development') {
-    return NextResponse.json(
-      { error: 'Not allowed in production' },
-      { status: 403 }
-    );
-  }
-
   try {
     await kv.set('artists', []);
     return NextResponse.json({ 
